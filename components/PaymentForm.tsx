@@ -22,26 +22,15 @@ export default function PaymentForm({ cell, userId }: PaymentFormProps) {
     setError('')
 
     try {
-      const response = await fetch('/api/payment/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          cellId: cell.id,
-          userId: userId,
-          amount: cell.price_1m,
-        }),
+      // MVP: Эмуляция оплаты - переход на mock страницу
+      const params = new URLSearchParams({
+        cellId: cell.id,
+        userId: userId,
+        amount: cell.price_1m.toString(),
+        cellNumber: cell.number
       })
 
-      const data = await response.json()
-
-      if (!response.ok) throw new Error(data.error)
-
-      // Перенаправление на страницу оплаты YooKassa
-      if (data.confirmationUrl) {
-        window.location.href = data.confirmationUrl
-      }
+      router.push(`/mock-payment?${params.toString()}`)
     } catch (err: any) {
       setError(err.message || 'Ошибка создания платежа')
     } finally {
