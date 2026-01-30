@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
 type PhoneAuthProps = {
   onSuccess: () => void
@@ -13,6 +12,7 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
   const [step, setStep] = useState<'phone' | 'otp'>('phone')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [channel, setChannel] = useState<'viber' | 'sms' | ''>('')
 
   async function handleSendOTP() {
     if (!phone || phone.length < 10) {
@@ -24,8 +24,21 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
     setError('')
 
     try {
-      // MVP: Эмуляция отправки SMS
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка отправки кода')
+      }
+
+      setChannel(data.channel)
       setStep('otp')
     } catch (err: any) {
       setError(err.message || 'Ошибка отправки кода')
@@ -39,36 +52,22 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
     setError('')
 
     try {
-      // MVP: Любой 4-значный код подходит
       if (otp.length !== 4) {
         throw new Error('Код должен состоять из 4 цифр')
       }
 
-      // Создаем анонимную сессию в Supabase
-      const { data: authData, error: authError } = await supabase.auth.signInAnonymously()
+      const response = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone, code: otp }),
+      })
 
-      if (authError) throw authError
+      const data = await response.json()
 
-      if (!authData.user) throw new Error('Ошибка создания сессии')
-
-      // Сохраняем пользователя в нашей таблице
-      const { error: userError } = await supabase
-        .from('users')
-        .upsert({
-          id: authData.user.id,
-          phone: phone,
-        }, {
-          onConflict: 'id'
-        })
-
-      if (userError) {
-        // Если ошибка foreign key - пользователь уже есть в auth.users но нет в public.users
-        // Просто создаем запись
-        if (userError.code === '23503') {
-          // Игнорируем, продолжаем
-        } else {
-          console.error('User creation error:', userError)
-        }
+      if (!response.ok) {
+        throw new Error(data.error || 'Неверный код')
       }
 
       // Сохраняем телефон в localStorage для отображения
@@ -88,9 +87,9 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
     <div>
       <h2 className="text-xl font-semibold mb-4">Вход по телефону</h2>
 
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-        <p className="text-xs text-yellow-800">
-          <strong>MVP режим:</strong> Введите любой номер телефона и код <strong>0000</strong> для входа
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+        <p className="text-xs text-blue-800">
+          <strong>💬 Приоритет:</strong> Сначала попытка отправить через мессенджер, затем SMS
         </p>
       </div>
 
@@ -113,11 +112,15 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
         </div>
       ) : (
         <div>
-          <p className="text-gray-600 mb-2">Код "отправлен" на {phone}</p>
-          <p className="text-sm text-green-600 mb-4">💡 Используйте код: <strong>0000</strong></p>
+          <p className="text-gray-600 mb-2">Код отправлен на {phone}</p>
+          {channel && (
+            <p className="text-sm text-green-600 mb-4">
+              ✓ Отправлено через {channel === 'viber' ? 'мессенджер' : 'SMS'}
+            </p>
+          )}
           <input
             type="text"
-            placeholder="Введите код (0000)"
+            placeholder="Введите код"
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
             maxLength={4}
@@ -135,6 +138,7 @@ export default function PhoneAuth({ onSuccess }: PhoneAuthProps) {
               setStep('phone')
               setOtp('')
               setError('')
+              setChannel('')
             }}
             className="btn-secondary w-full mt-2"
           >
